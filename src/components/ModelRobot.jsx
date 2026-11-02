@@ -92,10 +92,10 @@ function useMaterials() {
     // Selected link: same paint with a soft blue glow.
     const picked = paint.clone()
     picked.emissive = new THREE.Color('#38bdf8')
-    picked.emissiveIntensity = 0.35
+    picked.emissiveIntensity = 0.6
     const pickedDark = dark.clone()
     pickedDark.emissive = picked.emissive
-    pickedDark.emissiveIntensity = 0.5
+    pickedDark.emissiveIntensity = 0.8
     return { paint, dark, picked, pickedDark }
   }, [])
 }
@@ -113,7 +113,7 @@ export default function ModelRobot({ q, selected, onSelect }) {
     <group>
       {geometries.map((gs, i) => (
         // link_i is moved by joint i (DH row i − 1); the base has no joint
-        <Pickable key={KR6_MESHES[i]} onPick={i > 0 && onSelect ? () => onSelect(i - 1) : undefined}>
+        <Pickable key={KR6_MESHES[i]} onPick={i > 0 && onSelect ? (e) => onSelect(i - 1, e) : undefined}>
           <InFrame m={poses[i]}>
             {gs.map((g, k) => (
               <mesh key={k} geometry={g} material={i === 0 || i === 6 ? (i - 1 === selected ? pickedDark : dark) : i - 1 === selected ? picked : paint} castShadow receiveShadow />

@@ -97,6 +97,7 @@ function Arrow({ size, color, dim, active, onGrab }) {
       </mesh>
       {onGrab && (
         <mesh
+          userData={{ axisHandle: true }}
           position={[0, size * 0.58, 0]}
           onPointerOver={(e) => {
             e.stopPropagation()
@@ -112,7 +113,7 @@ function Arrow({ size, color, dim, active, onGrab }) {
             onGrab(e)
           }}
         >
-          <cylinderGeometry args={[size * 0.09, size * 0.09, size * 0.84, 8]} />
+          <cylinderGeometry args={[size * 0.06, size * 0.06, size * 0.84, 8]} />
           <meshBasicMaterial transparent opacity={0} depthWrite={false} />
         </mesh>
       )}
@@ -262,7 +263,7 @@ export function Robot({ fk, rows, selected, showAxes, showLabels, scale = 1, onA
       ) : (
         schematic
       )}
-      {selected != null && fk.links[selected] && <JointAxisGlow m={fk.links[selected].axis} length={0.22 * scale} />}
+      {selected != null && fk.links[selected] && <JointAxisGlow key={selected} m={fk.links[selected].axis} length={0.22 * scale} />}
       {showAxes &&
         fk.frames.map((m, i) => {
           const last = i === fk.frames.length - 1
@@ -304,7 +305,7 @@ function Schematic({ fk, rows, selected, scale, jointD, onSelect }) {
         <meshBasicMaterial color={ACCENT} toneMapped={false} />
       </mesh>
       {fk.links.map((l, i) => (
-        <Pickable key={i} onPick={onSelect && (() => onSelect(i))}>
+        <Pickable key={i} onPick={onSelect && ((e) => onSelect(i, e))}>
           <Rod from={pts[i]} to={mids[i]} radius={rodR} color={i === selected ? '#9fd4f5' : LINK} />
           <Rod from={mids[i]} to={pts[i + 1]} radius={rodR} color={i === selected ? '#9fd4f5' : LINK} />
           <Joint m={l.axis} type={rows[i].type} active={i === selected} radius={jointR} />
@@ -351,19 +352,25 @@ export function ToolMesh({ m, length, diameter }) {
   )
 }
 
-/** Click a part of the arm to select the joint that moves it; pointer cursor on hover. */
+/**
+ * A part of the arm: pressing on it grabs the joint that moves it (select + drag in its own freedom).
+ * Axis arrows win only when they are at the surface or in front of it.
+ */
 export function Pickable({ onPick, children }) {
   if (!onPick) return <group>{children}</group>
   return (
     <group
-      onClick={(e) => {
+      onPointerDown={(e) => {
+        if (e.button !== 0) return
+        // An axis arrow just in front of (or barely behind) the surface gets the press instead.
+        const handle = e.intersections.find((h) => h.object.userData.axisHandle)
+        if (handle && handle.distance < e.distance + 0.02) return
         e.stopPropagation()
-        if (e.delta > 4) return // the pointer moved: that was a camera drag, not a click
-        onPick()
+        onPick(e)
       }}
       onPointerOver={(e) => {
         e.stopPropagation()
-        document.body.style.cursor = 'pointer'
+        document.body.style.cursor = 'grab'
       }}
       onPointerOut={() => (document.body.style.cursor = '')}
     >

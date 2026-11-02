@@ -159,6 +159,101 @@ function useAxisDrag({ baseRef, fk, onFrameDrag, onFrameDragEnd }) {
   return { drag, grab }
 }
 
+/**
+ * Dragging a part of the arm turns (or slides) only the joint that moves it.
+ * Revolute: the angle the pointer sweeps around the joint axis, measured in the plane normal to the axis.
+ * When that plane is seen edge-on the horizontal mouse motion is used instead.
+ * Prismatic: the pointer is projected onto the joint axis, as in `useAxisDrag`.
+ */
+function usePartDrag({ baseRef, fk, q, rows, onSelect, onJoint }) {
+  const { camera, gl, controls } = useThree()
+  const [drag, setDrag] = useState(null)
+  const live = useRef({ fk, q, rows })
+  live.current = { fk, q, rows }
+
+  const grab = useCallback(
+    (joint, e) => {
+      onSelect(joint)
+      const base = baseRef.current
+      const { fk, q, rows } = live.current
+      const row = rows[joint]
+      if (!base || !row || !onJoint) return
+      const m = fk.links[joint].axis
+      base.updateWorldMatrix(true, false)
+      const O = base.localToWorld(new THREE.Vector3(...position(m)))
+      const D = new THREE.Vector3(...column(m, 2)).transformDirection(base.matrixWorld)
+      const ray = new THREE.Raycaster()
+      const plane = new THREE.Plane()
+      const hit = new THREE.Vector3()
+      const cast = (x, y) => {
+        const r = gl.domElement.getBoundingClientRect()
+        ray.setFromCamera(new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1), camera)
+      }
+      const x0 = e.nativeEvent.clientX
+      const y0 = e.nativeEvent.clientY
+      const q0 = q[joint]
+      const clamp = (v) => Math.min(row.max, Math.max(row.min, v))
+      let measure
+
+      if (row.type === 'R') {
+        plane.setFromNormalAndCoplanarPoint(D, O)
+        const radial = (x, y) => {
+          cast(x, y)
+          if (Math.abs(ray.ray.direction.dot(D)) < 0.2 || !ray.ray.intersectPlane(plane, hit)) return null
+          const v = hit.clone().sub(O)
+          return v.lengthSq() < 1e-6 ? null : v
+        }
+        let prev = radial(x0, y0)
+        let total = 0
+        measure = (x, y) => {
+          if (!prev) return q0 + (x - x0) * 0.4 // edge-on: 0.4° per pixel
+          const v = radial(x, y)
+          if (!v) return q0 + total
+          total += THREE.MathUtils.radToDeg(Math.atan2(prev.clone().cross(v).dot(D), prev.dot(v)))
+          prev = v
+          return q0 + total
+        }
+      } else {
+        const along = (x, y) => {
+          cast(x, y)
+          const view = camera.getWorldDirection(new THREE.Vector3())
+          const n = view.sub(D.clone().multiplyScalar(view.dot(D)))
+          if (n.lengthSq() < 1e-8) return null
+          plane.setFromNormalAndCoplanarPoint(n.normalize(), O)
+          return ray.ray.intersectPlane(plane, hit) ? hit.clone().sub(O).dot(D) : null
+        }
+        const t0 = along(x0, y0)
+        measure = (x, y) => {
+          const t = along(x, y)
+          return t == null || t0 == null ? q0 : q0 + (t - t0)
+        }
+      }
+
+      if (controls) controls.enabled = false
+      document.body.style.cursor = 'grabbing'
+      setDrag({ joint, origin: position(m), value: q0 })
+      const move = (ev) => {
+        const v = clamp(measure(ev.clientX, ev.clientY))
+        onJoint(joint, v)
+        setDrag((d) => d && { ...d, value: v })
+      }
+      const up = () => {
+        window.removeEventListener('pointermove', move)
+        window.removeEventListener('pointerup', up)
+        window.removeEventListener('pointercancel', up)
+        if (controls) controls.enabled = true
+        document.body.style.cursor = ''
+        setDrag(null)
+      }
+      window.addEventListener('pointermove', move)
+      window.addEventListener('pointerup', up)
+      window.addEventListener('pointercancel', up)
+    },
+    [baseRef, camera, gl, controls, onSelect, onJoint],
+  )
+  return { partDrag: drag, grabPart: grab }
+}
+
 /** Thin guide line along the dragged axis with the travelled distance. */
 function DragGuide({ drag, length }) {
   const { p0, dir, axis, delta, ok = true } = drag
@@ -230,11 +325,12 @@ function Studio({ background }) {
   )
 }
 
-export default function Scene({ fk, q, rows, convention, base, selected, show, view, resetKey, ik, onGoal, trail, cloud, reach, onFrameDrag, onFrameDragEnd, model, tool, pivot, onSelect }) {
+export default function Scene({ fk, q, rows, convention, base, selected, show, view, resetKey, ik, onGoal, trail, cloud, reach, onFrameDrag, onFrameDragEnd, model, tool, pivot, onSelect, onJoint }) {
   const scale = Math.min(1.6, Math.max(0.5, reach / 0.8))
   const target = useRef()
   const baseRef = useRef()
   const { drag, grab } = useAxisDrag({ baseRef, fk, onFrameDrag, onFrameDragEnd })
+  const { partDrag, grabPart } = usePartDrag({ baseRef, fk, q, rows, onSelect, onJoint })
   const t = useSceneTheme()
   return (
     <>
@@ -258,7 +354,14 @@ export default function Scene({ fk, q, rows, convention, base, selected, show, v
           </mesh>
         )}
         <group position={[0, 0, base]} ref={baseRef}>
-          <Robot fk={fk} q={q} rows={rows} selected={selected} showAxes={show.axes} showLabels={show.labels} scale={scale} onAxisGrab={grab} drag={drag} model={model} toolOn={!!tool} jointD={show.jointD} onSelect={onSelect} />
+          <Robot fk={fk} q={q} rows={rows} selected={selected} showAxes={show.axes} showLabels={show.labels} scale={scale} onAxisGrab={grab} drag={drag} model={model} toolOn={!!tool} jointD={show.jointD} onSelect={grabPart} />
+          {partDrag && (
+            <Html position={partDrag.origin} center zIndexRange={[30, 20]} className="pointer-events-none select-none">
+              <Chip color="#38bdf8" className="relative -top-7 text-[11px] font-semibold">
+                q{partDrag.joint + 1} {rows[partDrag.joint].type === 'R' ? `${partDrag.value.toFixed(1)}°` : `${(partDrag.value * 1000).toFixed(1)} mm`}
+              </Chip>
+            </Html>
+          )}
           {tool && <ToolMesh m={fk.tool} length={tool.length} diameter={tool.diameter} />}
           {tool && show.axes && (
             <InFrame m={multiply(fk.tool, toolMatrix(tool.length))}>

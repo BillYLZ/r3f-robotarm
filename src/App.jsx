@@ -155,7 +155,7 @@ function PosePanel({ T, w, wRef, ikStatus, ikOn }) {
 export default function App() {
   const [robot, setRobot] = useState(initialRobot)
   const { rows, q, convention, base, presetId } = robot
-  const [selected, setSelected] = useState(1)
+  const [selected, setSelected] = useState(null)
   const [tab, setTab] = useState('joints')
   const [show, setShow] = useState({ axes: true, labels: true, params: true, trail: false, model: true, jointD: 0.06 })
   const [view, setView] = useState('persp')
@@ -241,7 +241,7 @@ export default function App() {
     setPivot((p) => ({ ...p, t: 0, start: null }))
     const p = presetById(id)
     setRobot(fromPreset(p))
-    setSelected(Math.min(1, p.rows.length - 1))
+    setSelected(null)
     setCloud(null)
     setTrail([])
     setIk((s) => ({ ...s, on: false }))
@@ -390,7 +390,12 @@ export default function App() {
     <ThemeContext.Provider value={theme}>
     <div className="relative flex h-full flex-col md:block">
       <div className="relative min-h-0 flex-1 md:absolute md:inset-0">
-        <Canvas shadows camera={{ position: [1.8, 1.4, 1.8], fov: 45, near: 0.01, far: 100 }} dpr={[1, 2]}>
+        <Canvas
+          shadows
+          camera={{ position: [1.8, 1.4, 1.8], fov: 45, near: 0.01, far: 100 }}
+          dpr={[1, 2]}
+          onPointerMissed={(e) => e.button === 0 && setSelected(null)} // click on empty space clears the selection
+        >
           <Scene
             fk={fk}
             q={q}
@@ -408,6 +413,7 @@ export default function App() {
             onGoal={onGoal}
             onFrameDrag={onFrameDrag}
             onSelect={setSelected}
+            onJoint={setJoint}
             trail={trail}
             cloud={cloud}
             reach={reach}
