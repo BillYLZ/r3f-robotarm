@@ -157,7 +157,7 @@ export default function App() {
   const { rows, q, convention, base, presetId } = robot
   const [selected, setSelected] = useState(null)
   const [tab, setTab] = useState('joints')
-  const [show, setShow] = useState({ axes: true, labels: true, params: true, trail: false, model: true, jointD: 0.06 })
+  const [show, setShow] = useState({ axes: false, labels: false, params: false, trail: false, model: true, jointD: 0.06 })
   const [view, setView] = useState('persp')
   const [resetKey, setResetKey] = useState(0)
   const [ik, setIk] = useState({ on: false, mode: 'translate', orientation: true, goal: { m: null, seed: 0 } })
